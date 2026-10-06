@@ -65,6 +65,8 @@ Usage:
 
     Client -tr:<transport> -bf:<buffering> -pr:<protocol> [-mc:<numClients>]  [-multiplex]
         will run client with specified arguments (tcp transport and binary protocol by default) and with 1 client
+    Client -tr:http -per-call [-mc:<numClients>]
+        will exercise concurrent calls through a per-call-enabled HTTP client
 
 Options:
     -tr (transport): 
@@ -84,6 +86,8 @@ Options:
         json - json protocol 
 
     -multiplex - adds multiplexed protocol
+
+    -per-call - enables concurrent HTTP calls with per-call transport state
 
     -mc (multiple clients):
         <numClients> - number of multiple clients to connect to server (max 100, default 1)
@@ -129,6 +133,20 @@ Sample:
             var mplex = GetMultiplex(args);
             if (Logger.IsEnabled(LogLevel.Information))
                 Logger.LogInformation("Multiplex {mplex}", mplex);
+
+            if (args.Contains("-per-call"))
+            {
+                if (transport != Transport.Http)
+                    throw new ArgumentException("-per-call requires -tr:http.");
+                if (mplex)
+                    throw new ArgumentException("-per-call cannot be combined with -multiplex.");
+
+                var perCallTasks = new Task<bool>[numClients];
+                for (int i = 0; i < numClients; i++)
+                    perCallTasks[i] = RunPerCallClientAsync(MakeTransport(args), MakeProtocolFactory(args), cancellationToken);
+
+                return (await Task.WhenAll(perCallTasks)).All(succeeded => succeeded);
+            }
 
             var tasks = new Task<bool>[numClients];
             for (int i = 0; i < numClients; i++)
@@ -307,6 +325,49 @@ Sample:
                 Protocol.Json => new TJsonProtocol(transport),
                 _ => throw new Exception("unhandled protocol"),
             };
+        }
+
+        private static TProtocolFactory MakeProtocolFactory(string[] args)
+        {
+            Protocol selectedProtocol = GetProtocol(args);
+            return selectedProtocol switch
+            {
+                Protocol.Binary => new TBinaryProtocol.Factory(),
+                Protocol.Compact => new TCompactProtocol.Factory(),
+                Protocol.Json => new TJsonProtocol.Factory(),
+                _ => throw new Exception("unhandled protocol"),
+            };
+        }
+
+        private static async Task<bool> RunPerCallClientAsync(TTransport transport,
+            TProtocolFactory protocolFactory, CancellationToken cancellationToken)
+        {
+            try
+            {
+                if (!(transport is ITPerCallTransportProvider))
+                    throw new InvalidOperationException("The selected transport does not support per-call operations.");
+
+                using var client = new Calculator.Client(transport, protocolFactory, protocolFactory);
+                await client.OpenTransportAsync(cancellationToken);
+
+                var sums = await Task.WhenAll(Enumerable.Range(1, 8)
+                    .Select(value => client.add(value, value, cancellationToken)));
+                for (int index = 0; index < sums.Length; index++)
+                {
+                    var expected = (index + 1) * 2;
+                    if (sums[index] != expected)
+                        throw new InvalidOperationException($"Concurrent add returned {sums[index]}, expected {expected}.");
+                }
+
+                await ExecuteCalculatorClientOperations(client, cancellationToken);
+                Logger.LogInformation("PER_CALL_WORKFLOW_OK");
+                return true;
+            }
+            catch (Exception exception)
+            {
+                Logger.LogError("Per-call tutorial workflow failed: {exception}", exception);
+                return false;
+            }
         }
 
         private static async Task<bool> RunClientAsync(TProtocol protocol, bool multiplex, CancellationToken cancellationToken)

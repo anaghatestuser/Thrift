@@ -77,6 +77,9 @@ Usage:
     Client -tr:<transport> -pr:<protocol> -mc:<numClients>
         will run client with specified arguments (tcp transport and binary protocol by default)
 
+    Client -tr:http -per-call [-mc:<numClients>]
+        will run concurrent HTTP calls with a per-call-enabled generated client per task
+
 Options:
 
     -tr (transport): 
@@ -96,12 +99,16 @@ Options:
         json - json protocol will be used
         multiplexed - multiplexed protocol will be used
 
+    -per-call:
+        enables per-call transport state for concurrent high-level asynchronous HTTP calls
+
     -mc (multiple clients):
         <numClients> - number of multiple clients to connect to server (max 100, default 1)
 
 Sample:
 
     Client -tr:tcp -pr:binary -mc:10
+    Client -tr:http -per-call -mc:2
 
 Remarks:
 

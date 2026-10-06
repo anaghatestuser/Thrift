@@ -32,16 +32,19 @@ using System.Threading.Tasks;
 namespace Thrift.Transport.Client
 {
     // ReSharper disable once InconsistentNaming
-    public class THttpTransport : TEndpointTransport
+    public class THttpTransport : TEndpointTransport, ITPerCallTransportProvider
     {
         private readonly X509Certificate[] _certificates;
         private readonly Uri _uri;
 
         private int _connectTimeout = 30000; // Timeouts in milliseconds
         private HttpClient _httpClient;
+        private readonly HttpClientLease _httpClientLease;
         private Stream _inputStream;
         private MemoryStream _outputStream = new MemoryStream();
+        private HttpResponseMessage _responseMessage;
         private bool _isDisposed;
+        private int _leaseReleased;
 
         public THttpTransport(Uri uri, TConfiguration config, IDictionary<string, string> customRequestHeaders = null, string userAgent = null)
             : this(uri, config, Enumerable.Empty<X509Certificate>(), customRequestHeaders, userAgent)
@@ -62,6 +65,7 @@ namespace Thrift.Transport.Client
             // this can be switched to default way (create client->use->dispose per flush) later
             _httpClient = CreateClient(customRequestHeaders);
             ConfigureClient(_httpClient);
+            _httpClientLease = new HttpClientLease(_httpClient);
         }
 
         /// <summary>
@@ -87,7 +91,18 @@ namespace Thrift.Transport.Client
             if (!string.IsNullOrEmpty(userAgent))
                 UserAgent = userAgent;
 
-            ConfigureClient(_httpClient);
+            ConfigureClient(_httpClient, configureTimeout: false);
+            _httpClientLease = new HttpClientLease(_httpClient);
+        }
+
+        private THttpTransport(HttpClientLease httpClientLease, TConfiguration config, Uri uri)
+            : base(config)
+        {
+            _httpClientLease = httpClientLease;
+            _httpClient = httpClientLease.Client;
+            _uri = uri;
+            _connectTimeout = (int)_httpClient.Timeout.TotalMilliseconds;
+            UserAgent = _httpClient.DefaultRequestHeaders.UserAgent.ToString();
         }
 
         // According to RFC 2616 section 3.8, the "User-Agent" header may not carry a version number
@@ -115,6 +130,44 @@ namespace Thrift.Transport.Client
 
         public MediaTypeHeaderValue ContentType { get; set; }
 
+        /// <summary>
+        /// Gets the configured timeout for a complete client call using this transport.
+        /// </summary>
+        public TimeSpan PerCallTimeout => _httpClient?.Timeout ?? TimeSpan.FromMilliseconds(_connectTimeout);
+
+        /// <summary>
+        /// Gets whether this transport can create an independent transport for each call.
+        /// </summary>
+        public bool SupportsPerCallTransport => true;
+
+        /// <summary>
+        /// Creates a transport with independent request and response buffers for one client call.
+        /// </summary>
+        /// <param name="cancellationToken">Token used to cancel transport creation.</param>
+        /// <returns>A new transport owned by the caller.</returns>
+        public Task<TTransport> CreatePerCallTransportAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_isDisposed || _httpClient == null)
+            {
+                throw new ObjectDisposedException(nameof(THttpTransport));
+            }
+
+            _httpClientLease.AddReference();
+            try
+            {
+                return Task.FromResult<TTransport>(new THttpTransport(_httpClientLease, Configuration, _uri)
+                {
+                    ContentType = ContentType
+                });
+            }
+            catch
+            {
+                _httpClientLease.Release();
+                throw;
+            }
+        }
+
         public override Task OpenAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -123,23 +176,7 @@ namespace Thrift.Transport.Client
 
         public override void Close()
         {
-            if (_inputStream != null)
-            {
-                _inputStream.Dispose();
-                _inputStream = null;
-            }
-
-            if (_outputStream != null)
-            {
-                _outputStream.Dispose();
-                _outputStream = null;
-            }
-
-            if (_httpClient != null)
-            {
-                _httpClient.Dispose();
-                _httpClient = null;
-            }
+            DisposeResources();
         }
 
         public override async ValueTask<int> ReadAsync(byte[] buffer, int offset, int length, CancellationToken cancellationToken)
@@ -218,9 +255,9 @@ namespace Thrift.Transport.Client
             return httpClient;
         }
 
-        private void ConfigureClient(HttpClient httpClient)
+        private void ConfigureClient(HttpClient httpClient, bool configureTimeout = true)
         {
-            if (_connectTimeout > 0)
+            if (configureTimeout && _connectTimeout > 0)
             {
                 httpClient.Timeout = TimeSpan.FromMilliseconds(_connectTimeout);
             }
@@ -245,13 +282,15 @@ namespace Thrift.Transport.Client
                 {
                     contentStream.Headers.ContentType = ContentType ?? new MediaTypeHeaderValue(@"application/x-thrift");
 
-                    var response = (await _httpClient.PostAsync(_uri, contentStream, cancellationToken)).EnsureSuccessStatusCode();
-
+                    var response = await _httpClient.PostAsync(_uri, contentStream, cancellationToken);
                     _inputStream?.Dispose();
+                    _responseMessage?.Dispose();
+                    _responseMessage = response;
+                    response.EnsureSuccessStatusCode();
 #if NET5_0_OR_GREATER
-                    _inputStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                    _inputStream = await _responseMessage.Content.ReadAsStreamAsync(cancellationToken);
 #else
-                    _inputStream = await response.Content.ReadAsStreamAsync();
+                    _inputStream = await _responseMessage.Content.ReadAsStreamAsync();
 #endif
                     if (_inputStream.CanSeek)
                     {
@@ -288,15 +327,95 @@ namespace Thrift.Transport.Client
         protected override void Dispose(bool disposing)
         {
             if (!_isDisposed)
+                DisposeResources();
+        }
+
+        private void DisposeResources()
+        {
+            if (_isDisposed)
             {
-                if (disposing)
+                return;
+            }
+
+            _isDisposed = true;
+            try
+            {
+                _inputStream?.Dispose();
+            }
+            finally
+            {
+                try
                 {
-                    _inputStream?.Dispose();
                     _outputStream?.Dispose();
-                    _httpClient?.Dispose();
+                }
+                finally
+                {
+                    try
+                    {
+                        _responseMessage?.Dispose();
+                    }
+                    finally
+                    {
+                        _inputStream = null;
+                        _outputStream = null;
+                        _responseMessage = null;
+                        _httpClient = null;
+                        if (Interlocked.Exchange(ref _leaseReleased, 1) == 0)
+                        {
+                            _httpClientLease.Release();
+                        }
+                    }
                 }
             }
-            _isDisposed = true;
+        }
+
+        private sealed class HttpClientLease
+        {
+            private readonly object _gate = new object();
+            private int _referenceCount = 1;
+            private bool _isDisposed;
+
+            public HttpClientLease(HttpClient client)
+            {
+                Client = client ?? throw new ArgumentNullException(nameof(client));
+            }
+
+            public HttpClient Client { get; }
+
+            public void AddReference()
+            {
+                lock (_gate)
+                {
+                    if (_isDisposed)
+                    {
+                        throw new ObjectDisposedException(nameof(HttpClientLease));
+                    }
+                    _referenceCount++;
+                }
+            }
+
+            public void Release()
+            {
+                var disposeClient = false;
+                lock (_gate)
+                {
+                    if (_referenceCount == 0)
+                    {
+                        return;
+                    }
+                    _referenceCount--;
+                    if (_referenceCount == 0)
+                    {
+                        _isDisposed = true;
+                        disposeClient = true;
+                    }
+                }
+
+                if (disposeClient)
+                {
+                    Client.Dispose();
+                }
+            }
         }
     }
 }

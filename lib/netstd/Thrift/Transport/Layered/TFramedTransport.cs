@@ -28,7 +28,7 @@ using System.Threading.Tasks;
 namespace Thrift.Transport
 {
     // ReSharper disable once InconsistentNaming
-    public class TFramedTransport : TLayeredTransport
+    public class TFramedTransport : TLayeredTransport, ITPerCallTransportProvider
     {
         private const int HeaderSize = 4;
         private readonly byte[] HeaderBuf = new byte[HeaderSize];
@@ -51,6 +51,52 @@ namespace Thrift.Transport
             ReadBuffer = new Client.TMemoryBufferTransport(Configuration);
             WriteBuffer = new Client.TMemoryBufferTransport(Configuration);
             InitWriteBuffer();
+        }
+
+        /// <summary>
+        /// Gets the maximum duration of a complete operation delegated to the underlying transport.
+        /// </summary>
+        public TimeSpan PerCallTimeout
+        {
+            get
+            {
+                if (!(InnerTransport is ITPerCallTransportProvider provider))
+                {
+                    throw new NotSupportedException("The underlying transport does not support per-call transports.");
+                }
+                return provider.PerCallTimeout;
+            }
+        }
+
+        /// <summary>
+        /// Gets whether the underlying transport supports per-call transports.
+        /// </summary>
+        public bool SupportsPerCallTransport =>
+            InnerTransport is ITPerCallTransportProvider provider && provider.SupportsPerCallTransport;
+
+        /// <summary>
+        /// Creates a framed transport with independent frame buffers around a new per-call underlying transport.
+        /// </summary>
+        /// <param name="cancellationToken">Token used to cancel underlying transport creation.</param>
+        /// <returns>A new framed transport owned by the caller.</returns>
+        /// <exception cref="NotSupportedException">The underlying transport does not support per-call transports.</exception>
+        public async Task<TTransport> CreatePerCallTransportAsync(CancellationToken cancellationToken)
+        {
+            if (!(InnerTransport is ITPerCallTransportProvider provider) || !provider.SupportsPerCallTransport)
+            {
+                throw new NotSupportedException("The underlying transport does not support per-call transports.");
+            }
+
+            var transport = await provider.CreatePerCallTransportAsync(cancellationToken);
+            try
+            {
+                return new TFramedTransport(transport);
+            }
+            catch
+            {
+                transport?.Dispose();
+                throw;
+            }
         }
 
         public override bool IsOpen => !IsDisposed && InnerTransport.IsOpen;

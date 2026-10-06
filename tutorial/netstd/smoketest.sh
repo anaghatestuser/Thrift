@@ -36,7 +36,12 @@ CASES=(
   "-tr:tcptls"
   "-tr:namedpipe"
   "-tr:http"
+  "-tr:http -per-call"
 )
+
+if [ "${THRIFT_TUTORIAL_PER_CALL_ONLY:-0}" = "1" ]; then
+  CASES=("-tr:http -per-call")
+fi
 
 cd "$(dirname "$0")" || exit 1
 
@@ -137,6 +142,15 @@ run_case() {
     show_logs
     return 1
   fi
+  case "$args" in
+    *-per-call*)
+      if ! grep -q "PER_CALL_WORKFLOW_OK" "$CLOG"; then
+        echo "FAIL  $args -mc:$CLIENTS: per-call workflow marker was not written"
+        show_logs
+        return 1
+      fi
+      ;;
+  esac
   echo "PASS  $args -mc:$CLIENTS"
 }
 

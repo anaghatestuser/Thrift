@@ -1,0 +1,33 @@
+schema: spec-driven
+githubCopilot:
+  cloudAgent: true
+context: |
+  Tech stack:
+    - netstandard2.1
+    - netstandard2.0
+    - net8.0
+    - net9.0
+    - net10.0
+    - C#
+  TDD discipline (non-negotiable):
+    - Follow Red-Green-Refactor strictly.
+    - For every behavior in the specs, write failing tests FIRST, then implement.
+  Task conventions:
+    - Group tasks under `## N. Group Name` headings.
+    - Every task must be a checkbox in the form `- [ ] N.M Task description`.
+    - Each task must be small, focused, reference the relevant spec scenario, and sequence: tests → implementation → refactor.
+    - Check off tasks as you complete them one-by-one or a section at a time.
+
+rules:
+  proposal:
+    - Include rollback plan
+    - Identify affected teams
+  specs:
+    - Use Given/When/Then format
+    - Reference existing patterns before inventing new ones
+
+operations:
+  apply:
+    guidance:
+      - Run focused tests before the full suite
+      - Prefer small, focused diffs; keep each implementation change under ~30 lines when possible

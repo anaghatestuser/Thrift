@@ -2432,11 +2432,28 @@ void t_netstd_generator::generate_service_client(ostream& out, t_service* tservi
         << indent() << "{" << '\n';
     indent_up();
 
-    out << indent() << "public Client(TProtocol protocol) : this(protocol, protocol)" << '\n'
+    out << indent() << "/// <summary>Initializes the client with a shared protocol.</summary>" << '\n'
+        << indent() << "/// <remarks>Use this constructor when the application already owns and configures the protocol. It preserves shared-protocol behavior; use the transport and protocol-factory constructor to opt into per-call transports.</remarks>" << '\n'
+        << indent() << "/// <param name=\"protocol\">The shared protocol used for input and output.</param>" << '\n'
+        << indent() << "public Client(TProtocol protocol) : this(protocol, protocol)" << '\n'
         << indent() << "{" << '\n'
         << indent() << "}" << '\n'
         << '\n'
+        << indent() << "/// <summary>Initializes the client with shared input and output protocols.</summary>" << '\n'
+        << indent() << "/// <remarks>This constructor remains available for callers that manage protocol instances directly and preserves their shared-transport semantics. For concurrent per-call operations, use a supporting transport with the protocol-factory constructor.</remarks>" << '\n'
+        << indent() << "/// <param name=\"inputProtocol\">The shared input protocol.</param>" << '\n'
+        << indent() << "/// <param name=\"outputProtocol\">The shared output protocol.</param>" << '\n'
         << indent() << "public Client(TProtocol inputProtocol, TProtocol outputProtocol) : base(inputProtocol, outputProtocol)" << '\n'
+        << indent() << "{" << '\n'
+        << indent() << "}" << '\n'
+        << '\n'
+        << indent() << "/// <summary>Initializes the client with protocols created for a supplied transport.</summary>" << '\n'
+        << indent() << "/// <remarks>When <paramref name=\"transport\"/> supports <see cref=\"ITPerCallTransportProvider\"/>, generated asynchronous calls use a separate transport and protocol state per call. Existing protocol constructors retain shared-protocol behavior.</remarks>" << '\n'
+        << indent() << "/// <param name=\"transport\">The shared transport or per-call transport provider.</param>" << '\n'
+        << indent() << "/// <param name=\"inputProtocolFactory\">The factory used to create input protocols.</param>" << '\n'
+        << indent() << "/// <param name=\"outputProtocolFactory\">The factory used to create output protocols.</param>" << '\n'
+        << indent() << "public Client(TTransport transport, TProtocolFactory inputProtocolFactory, TProtocolFactory outputProtocolFactory)" << '\n'
+        << indent() << "    : base(transport, inputProtocolFactory, outputProtocolFactory)" << '\n'
         << indent() << "{" << '\n'
         << indent() << "}" << '\n'
         << '\n';
@@ -2448,10 +2465,16 @@ void t_netstd_generator::generate_service_client(ostream& out, t_service* tservi
     {
         string raw_func_name = (*functions_iterator)->get_name();
         string function_name = raw_func_name + (add_async_postfix ? "Async" : "");
+        string call_cancellation_token = tmp("callCancellationToken");
 
         // async
         generate_deprecation_attribute(out, (*functions_iterator)->annotations_);
         out << indent() << "public async " << function_signature_async(*functions_iterator, "") << '\n'
+            << indent() << "{" << '\n';
+        indent_up();
+        bool returns_value = !(*functions_iterator)->is_oneway() && !(*functions_iterator)->get_returntype()->is_void();
+        out << indent() << (returns_value ? "return await " : "await ")
+            << "ExecutePerCallAsync(async (" << call_cancellation_token << ") =>" << '\n'
             << indent() << "{" << '\n';
         indent_up();
         out << indent() << "await send_" << function_name << "(";
@@ -2459,11 +2482,13 @@ void t_netstd_generator::generate_service_client(ostream& out, t_service* tservi
         if(! call_args.empty()) {
             out << call_args << ", ";
         }
-        out << CANCELLATION_TOKEN_NAME << ");" << '\n';
+        out << call_cancellation_token << ");" << '\n';
         if(! (*functions_iterator)->is_oneway()) {
-            out << indent() << ((*functions_iterator)->get_returntype()->is_void() ? "" : "return ")
-                            << "await recv_" << function_name << "(" << CANCELLATION_TOKEN_NAME << ");" << '\n';
+            out << indent() << (returns_value ? "return " : "")
+            << "await recv_" << function_name << "(" << call_cancellation_token << ");" << '\n';
         }
+        indent_down();
+        out << indent() << "}, " << CANCELLATION_TOKEN_NAME << ");" << '\n';
         indent_down();
         out << indent() << "}" << '\n' << '\n';
 
