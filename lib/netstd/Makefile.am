@@ -74,6 +74,8 @@ dist-hook:
 
 EXTRA_DIST = \
 	README.md \
+	per-call-transport.md \
+	openspec \
 	Directory.Build.props \
 	Benchmarks/Thrift.Benchmarks \
 	Tests/codegen/run-NetStd-Codegen-Tests.ps1 \

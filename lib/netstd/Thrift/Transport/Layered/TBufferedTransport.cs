@@ -24,7 +24,7 @@ using System.Threading.Tasks;
 namespace Thrift.Transport
 {
     // ReSharper disable once InconsistentNaming
-    public class TBufferedTransport : TLayeredTransport
+    public class TBufferedTransport : TLayeredTransport, ITPerCallTransportProvider
     {
         private readonly int DesiredBufferSize;
         private readonly Client.TMemoryBufferTransport ReadBuffer;
@@ -64,6 +64,52 @@ namespace Thrift.Transport
                 CheckNotDisposed();
 
                 return InnerTransport;
+            }
+        }
+
+        /// <summary>
+        /// Gets the maximum duration of a complete operation delegated to the underlying transport.
+        /// </summary>
+        public TimeSpan PerCallTimeout
+        {
+            get
+            {
+                if (!(InnerTransport is ITPerCallTransportProvider provider))
+                {
+                    throw new System.NotSupportedException("The underlying transport does not support per-call transports.");
+                }
+                return provider.PerCallTimeout;
+            }
+        }
+
+        /// <summary>
+        /// Gets whether the underlying transport supports per-call transports.
+        /// </summary>
+        public bool SupportsPerCallTransport =>
+            InnerTransport is ITPerCallTransportProvider provider && provider.SupportsPerCallTransport;
+
+        /// <summary>
+        /// Creates a buffered transport around a new per-call underlying transport.
+        /// </summary>
+        /// <param name="cancellationToken">Token used to cancel underlying transport creation.</param>
+        /// <returns>A new buffered transport owned by the caller.</returns>
+        /// <exception cref="System.NotSupportedException">The underlying transport does not support per-call transports.</exception>
+        public async Task<TTransport> CreatePerCallTransportAsync(CancellationToken cancellationToken)
+        {
+            if (!(InnerTransport is ITPerCallTransportProvider provider) || !provider.SupportsPerCallTransport)
+            {
+                throw new System.NotSupportedException("The underlying transport does not support per-call transports.");
+            }
+
+            var transport = await provider.CreatePerCallTransportAsync(cancellationToken);
+            try
+            {
+                return new TBufferedTransport(transport, DesiredBufferSize);
+            }
+            catch
+            {
+                transport?.Dispose();
+                throw;
             }
         }
 

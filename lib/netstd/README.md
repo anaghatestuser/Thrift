@@ -14,6 +14,30 @@ The library ships as two packages so that non-web projects no longer pull in the
   *in addition to* `ApacheThrift` only when you host Thrift over ASP.NET Core. Existing code
   keeps compiling unchanged once the package reference is added.
 
+# Per-call HTTP client calls
+
+For concurrent asynchronous calls, construct the generated client with a transport that
+implements `ITPerCallTransportProvider` and protocol factories. `THttpTransport`,
+`TBufferedTransport`, and `TFramedTransport` over a supporting transport provide this capability. Each generated
+high-level call then gets independent transport and protocol state while the HTTP connection
+pool is shared:
+
+```csharp
+var transport = new THttpTransport(new Uri("http://localhost:9090"), new TConfiguration());
+var protocolFactory = new TBinaryProtocol.Factory();
+using var client = new Calculator.Client(transport, protocolFactory, protocolFactory);
+
+var results = await Task.WhenAll(Enumerable.Range(1, 8)
+    .Select(value => client.add(value, value, cancellationToken)));
+```
+
+The existing constructors that accept `TProtocol` instances remain the shared-protocol path
+for applications that manage protocol instances directly. Per-call behavior is opt-in; a
+transport without the provider capability continues to use shared behavior. The per-call scope
+covers generated high-level asynchronous methods that perform a complete RPC. Calling generated
+`send_*` and `recv_*` methods separately continues to use the shared protocols and must not be
+interleaved on the same client.
+
 # Build the library
 
 ## How to build on Windows
