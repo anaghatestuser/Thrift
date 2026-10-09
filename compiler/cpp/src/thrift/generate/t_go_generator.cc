@@ -5038,7 +5038,11 @@ bool t_go_generator::generate_deprecation_comment(ostream& out, const map<string
       } else {
         out << "; ";
       }
-      out << *str_iter;
+      // Escape the value: annotation literals may contain raw newlines or
+      // other control bytes (e.g. from \n escapes in the IDL) that would
+      // otherwise break out of the "// Deprecated:" line comment and inject
+      // arbitrary text into the generated Go source.
+      out << escape_string(*str_iter);
     }
     if (first) {
       // All deprecation annotations are empty, put a generic reason here

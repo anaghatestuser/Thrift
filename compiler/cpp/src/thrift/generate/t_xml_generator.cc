@@ -114,6 +114,7 @@ private:
   void write_attribute(string key, string val);
   void write_int_attribute(string key, int val);
   string escape_xml_string(const string& input);
+  string sanitize_xml_name(const string& input);
 
   void write_xml_comment(string msg);
 
@@ -230,7 +231,7 @@ void t_xml_generator::write_element_end() {
 }
 
 void t_xml_generator::write_attribute(string key, string val) {
-  f_xml_ << " " << key << "=\"" << escape_xml_string(val) << "\"";
+  f_xml_ << " " << sanitize_xml_name(key) << "=\"" << escape_xml_string(val) << "\"";
 }
 
 void t_xml_generator::write_int_attribute(string key, int val) {
@@ -271,6 +272,24 @@ string t_xml_generator::escape_xml_string(const string& input) {
       ss << iter;
       break;
     }
+  }
+  return ss.str();
+}
+
+/**
+ * XML names cannot be protected by entity escaping, so replace every
+ * character that is not valid in an XML name with an underscore.  This
+ * keeps the generated document well-formed even when a name is built
+ * from attacker-controlled data, such as the program name, which the
+ * frontend derives from the input file name without character filtering.
+ */
+string t_xml_generator::sanitize_xml_name(const string& input) {
+  std::ostringstream ss;
+  for (string::size_type i = 0; i < input.size(); ++i) {
+    const char c = input[i];
+    const bool valid = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == ':'
+                       || (i > 0 && ((c >= '0' && c <= '9') || c == '-' || c == '.'));
+    ss << (valid ? c : '_');
   }
   return ss.str();
 }

@@ -389,6 +389,24 @@ protected:
     return identifier;
   }
 
+  /**
+   * Escapes text for safe inclusion in a Python triple-quoted docstring:
+   * backslashes and double quotes are escaped so the emitted text can never
+   * terminate the """ delimiter. The content is unchanged once Python
+   * parses the string literal.
+   */
+  static std::string escape_python_docstring(const std::string& doc) {
+    std::string result;
+    result.reserve(doc.size());
+    for (std::string::const_iterator it = doc.begin(); it != doc.end(); ++it) {
+      if (*it == '\\' || *it == '"') {
+        result.push_back('\\');
+      }
+      result.push_back(*it);
+    }
+    return result;
+  }
+
   std::set<std::string> lang_keywords_for_validation() const override {
     return {};
   }
@@ -2716,6 +2734,22 @@ void t_py_generator::generate_serialize_list_element(ostream& out, t_list* tlist
 }
 
 /**
+ * Escapes a docstring for inclusion in a generated Python triple-quoted
+ * string literal, so that the doc text cannot terminate the literal.
+ */
+static std::string escape_python_docstring(const std::string& doc) {
+  std::string escaped;
+  escaped.reserve(doc.size());
+  for (char c : doc) {
+    if (c == '\\' || c == '"') {
+      escaped.push_back('\\');
+    }
+    escaped.push_back(c);
+  }
+  return escaped;
+}
+
+/**
  * Generates the docstring for a given struct.
  */
 void t_py_generator::generate_python_docstring(ostream& out, t_struct* tstruct) {
@@ -2735,7 +2769,7 @@ void t_py_generator::generate_python_docstring(ostream& out, t_function* tfuncti
   generate_python_params_docstring(ss, tfunction->get_arglist(), &has_doc, "Parameters");
   generate_python_params_docstring(ss, tfunction->get_xceptions(), &has_doc, "Raises");
   if (has_doc) {
-    generate_docstring_comment(out, "\"\"\"\n", "", ss.str(), "\"\"\"\n");
+    generate_docstring_comment(out, "\"\"\"\n", "", escape_python_docstring(ss.str()), "\"\"\"\n");
   }
 }
 
@@ -2754,7 +2788,7 @@ void t_py_generator::generate_python_docstring(ostream& out,
   }
   generate_python_params_docstring(ss, tstruct, &has_doc, subheader);
   if (has_doc) {
-    generate_docstring_comment(out, "\"\"\"\n", "", ss.str(), "\"\"\"\n");
+    generate_docstring_comment(out, "\"\"\"\n", "", escape_python_docstring(ss.str()), "\"\"\"\n");
   }
 }
 
@@ -2791,7 +2825,7 @@ void t_py_generator::generate_python_params_docstring(ostream& ss,
  */
 void t_py_generator::generate_python_docstring(ostream& out, t_doc* tdoc) {
   if (tdoc->has_doc()) {
-    generate_docstring_comment(out, "\"\"\"\n", "", tdoc->get_doc(), "\"\"\"\n");
+    generate_docstring_comment(out, "\"\"\"\n", "", escape_python_docstring(tdoc->get_doc()), "\"\"\"\n");
   }
 }
 

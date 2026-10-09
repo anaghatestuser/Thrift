@@ -63,6 +63,22 @@ public:
     }
 
     out_dir_base_ = "gen-st";
+
+    // Smalltalk string literals are delimited by single quotes, and a literal
+    // single quote is written by doubling it; in chunk file-in format a
+    // literal bang is written by doubling it as well.  Double quotes (the
+    // Smalltalk comment delimiter), backslashes and control characters have
+    // no special meaning inside a Smalltalk string literal, so the inherited
+    // C-style escapes for them must not be emitted here: they would corrupt
+    // the value, and a backslash-quote does not protect a literal in
+    // Smalltalk.
+    escape_['\''] = "''";
+    escape_['!'] = "!!";
+    escape_.erase('"');
+    escape_.erase('\\');
+    escape_.erase('\n');
+    escape_.erase('\r');
+    escape_.erase('\t');
   }
 
   /**
@@ -366,7 +382,7 @@ string t_st_generator::render_const_value(t_type* type, t_const_value* value) {
     t_base_type::t_base tbase = ((t_base_type*)type)->get_base();
     switch (tbase) {
     case t_base_type::TYPE_STRING:
-      out << '"' << get_escaped_string(value) << '"';
+      out << '\'' << get_escaped_string(value) << '\'';
       break;
     case t_base_type::TYPE_BOOL:
       out << (value->get_integer() > 0 ? "true" : "false");

@@ -18,6 +18,7 @@
  */
 
 #include "TZmqServer.h"
+#include <thrift/TOutput.h>
 #include <thrift/transport/TBufferTransports.h>
 #include <boost/scoped_ptr.hpp>
 
@@ -41,7 +42,19 @@ bool TZmqServer::serveOne(int recv_flags) {
       outputProtocolFactory_->getProtocol(outputTransport));
   shared_ptr<TMemoryBuffer> transport(new TMemoryBuffer);
 
-  processor_->process(inputProtocol, outputProtocol, nullptr);
+  try {
+    processor_->process(inputProtocol, outputProtocol, nullptr);
+  } catch (const std::exception& ex) {
+    // A malformed message from a peer must not take down the server: no
+    // caller above serveOne (serve(), serveActive(), serveForever(), or
+    // main) catches exceptions, so anything escaping here terminates the
+    // process via std::terminate. Log and drop the message, then fall
+    // through to still send a reply on ZMQ_REP sockets below, because a
+    // REP socket cannot receive the next message until it has sent one.
+    TOutput::instance().printf("TZmqServer exception while processing request: %s", ex.what());
+  } catch (...) {
+    TOutput::instance()("TZmqServer unknown exception while processing request");
+  }
 
   if (zmq_type_ == ZMQ_REP) {
     uint8_t* buf;
@@ -57,13 +70,13 @@ bool TZmqServer::serveOne(int recv_flags) {
 
 
 void TZmqMultiServer::serveOne(long timeout) {
-  boost::scoped_ptr<zmq::pollitem_t> items(setupPoll());
+  boost::scoped_array<zmq::pollitem_t> items(setupPoll());
   serveActive(items.get(), timeout);
 }
 
 
 void TZmqMultiServer::serveForever() {
-  boost::scoped_ptr<zmq::pollitem_t> items(setupPoll());
+  boost::scoped_array<zmq::pollitem_t> items(setupPoll());
   while (true) {
     serveActive(items.get(), -1);
   }

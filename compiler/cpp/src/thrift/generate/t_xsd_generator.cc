@@ -90,6 +90,63 @@ private:
 
   std::string xsd(std::string in) { return ns(in, "xsd"); }
 
+  /**
+   * Escape a string for safe use inside a double-quoted XML attribute value.
+   * Namespace URIs come from IDL literals, which may contain raw markup
+   * characters; without escaping they would break out of the attribute.
+   */
+  static std::string escape_xml_attribute(const std::string& in) {
+    std::string out;
+    out.reserve(in.size());
+    for (char c : in) {
+      switch (c) {
+      case '&':
+        out += "&amp;";
+        break;
+      case '<':
+        out += "&lt;";
+        break;
+      case '>':
+        out += "&gt;";
+        break;
+      case '"':
+        out += "&quot;";
+        break;
+      case '\'':
+        out += "&apos;";
+        break;
+      default:
+        out += c;
+        break;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Escape a string for safe use inside a single-quoted PHP string literal.
+   * The program name is derived from the input file name, which may contain
+   * quotes or backslashes; without escaping they would break the literal.
+   */
+  static std::string escape_php_single_quoted(const std::string& in) {
+    std::string out;
+    out.reserve(in.size());
+    for (char c : in) {
+      switch (c) {
+      case '\\':
+        out += "\\\\";
+        break;
+      case '\'':
+        out += "\\'";
+        break;
+      default:
+        out += c;
+        break;
+      }
+    }
+    return out;
+  }
+
   std::string type_name(t_type* ttype);
   std::string base_type_name(t_base_type::t_base tbase);
 
@@ -202,8 +259,8 @@ void t_xsd_generator::generate_element(ostream& out,
         } else {
           subname = type_name(subtype);
         }
-        f_php_ << "$GLOBALS['" << program_->get_name() << "_xsd_elt_" << name << "'] = '" << subname
-               << "';" << '\n';
+        f_php_ << "$GLOBALS['" << escape_php_single_quoted(program_->get_name()) << "_xsd_elt_"
+               << name << "'] = '" << subname << "';" << '\n';
         generate_element(out, subname, subtype, nullptr, false, false, true);
         indent_down();
         indent(out) << "</xsd:sequence>" << '\n';
@@ -269,7 +326,8 @@ void t_xsd_generator::generate_service(t_service* tservice) {
     ns = uri->second.back();
   }
   if (ns.size() > 0) {
-    ns = " targetNamespace=\"" + ns + "\" xmlns=\"" + ns + "\" "
+    string escaped_ns = escape_xml_attribute(ns);
+    ns = " targetNamespace=\"" + escaped_ns + "\" xmlns=\"" + escaped_ns + "\" "
          + "elementFormDefault=\"qualified\"";
   }
 
