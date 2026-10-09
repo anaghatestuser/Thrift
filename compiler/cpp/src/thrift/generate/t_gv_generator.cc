@@ -103,6 +103,9 @@ private:
 void t_gv_generator::init_generator() {
   escape_['{'] = "\\{";
   escape_['}'] = "\\}";
+  escape_['|'] = "\\|";
+  escape_['<'] = "\\<";
+  escape_['>'] = "\\>";
 
   // Make output directory
   MKDIR(get_out_dir().c_str());

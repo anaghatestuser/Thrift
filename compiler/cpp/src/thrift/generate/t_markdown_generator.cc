@@ -431,6 +431,26 @@ static std::string escape_md_table_cell(const std::string& s) {
   return result;
 }
 
+// Wraps text in a Markdown code span. The backtick fence is made one longer
+// than the longest backtick run inside the text so that embedded backticks
+// cannot terminate the span and inject raw markup. When the text can touch
+// the fence, a space is added on each side to keep them apart; Markdown
+// strips one surrounding space pair from code-span content, so the text
+// itself is rendered unchanged.
+static std::string md_code_span(const std::string& s) {
+  size_t longest = 0;
+  size_t run = 0;
+  for (char c : s) {
+    run = (c == '`') ? run + 1 : 0;
+    if (run > longest)
+      longest = run;
+  }
+  std::string fence(longest + 1, '`');
+  if (longest == 0)
+    return fence + s + fence;
+  return fence + " " + s + " " + fence;
+}
+
 /**
  * Prints function documentation, rendering @param and @return tags as a table.
  * Tags are only recognised at the start of a line (after optional whitespace),
@@ -576,14 +596,17 @@ void t_markdown_generator::print_doc_with_at_params(t_doc* tdoc) {
     f_out_ << "| Name | Description |\n"
            << "| --- | --- |\n";
     for (auto& p : parsed) {
-      string cell_sig = escape_md_table_cell(p.signature);
+      // The signature is emitted inside a code span: escape any HTML
+      // metacharacters in it, then fence it so it cannot break out of the
+      // span and inject raw markup into the table.
+      string cell_sig = escape_md_table_cell(unsafe_ ? p.signature : escape_string(p.signature));
       string cell_desc = escape_md_table_cell(unsafe_ ? p.description : escape_html(p.description));
       if (p.tag == "param") {
-        f_out_ << "| `" << cell_sig << "` | " << cell_desc << " |\n";
+        f_out_ << "| " << md_code_span(cell_sig) << " | " << cell_desc << " |\n";
       } else {
         string ret_col = "**Returns**";
         if (!cell_sig.empty())
-          ret_col += " `" + cell_sig + "`";
+          ret_col += " " + md_code_span(cell_sig);
         f_out_ << "| " << ret_col << " | " << cell_desc << " |\n";
       }
     }
@@ -758,7 +781,10 @@ std::string t_markdown_generator::escape_html_tags(std::string const& str) {
       i = (char)tolower((unsigned char)i);
     }
     if (allowed_markup.find(tag_key) != allowed_markup.end()) {
-      result << "<" << tag_content << ">";
+      // Re-emit only the bare tag, never its attributes: attribute values are
+      // attacker-controlled and may carry script (event handler attributes,
+      // javascript: URIs, ...), which must not reach the generated document.
+      result << "<" << tag_key << ">";
     } else {
       result << "&lt;" << tagstream.str() << "&gt;";
       pverbose("illegal markup <%s> in doc-comment\n", tag_key.c_str());

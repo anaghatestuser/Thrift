@@ -53,6 +53,35 @@ static const string dart_thrift_version = THRIFT_VERSION;
 string initial_caps_to_underscores(string name);
 
 /**
+ * Returns true if the given string is a valid Dart library name, i.e. a
+ * non-empty, dot-separated list of identifiers ([A-Za-z_][A-Za-z0-9_]*).
+ * The library name is used to build output directory and file paths, so
+ * anything else (in particular path separators or ".." segments) must be
+ * rejected to keep generated files inside the output directory.
+ */
+static bool is_valid_dart_library_name(const string& name) {
+  if (name.empty()) {
+    return false;
+  }
+  bool start_of_segment = true;
+  for (string::const_iterator it = name.begin(); it != name.end(); ++it) {
+    const char c = *it;
+    if (c == '.') {
+      if (start_of_segment) {
+        return false; // leading dot or empty segment, e.g. ".."
+      }
+      start_of_segment = true;
+    } else if (c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+               (c >= '0' && c <= '9' && !start_of_segment)) {
+      start_of_segment = false;
+    } else {
+      return false;
+    }
+  }
+  return !start_of_segment; // reject a trailing dot
+}
+
+/**
  * Dart code generator
  *
  */
@@ -71,6 +100,9 @@ public:
     pubspec_lib_ = "";
     for( iter = parsed_options.begin(); iter != parsed_options.end(); ++iter) {
       if( iter->first.compare("library_name") == 0) {
+        if (!iter->second.empty() && !is_valid_dart_library_name(iter->second)) {
+          throw "invalid option dart:library_name=" + iter->second;
+        }
         library_name_ = (iter->second);
       } else if( iter->first.compare("library_prefix") == 0) {
         library_prefix_ = (iter->second) + ".";
@@ -83,6 +115,9 @@ public:
     }
 
     out_dir_base_ = "gen-dart";
+
+    escape_['\''] = "\\'";
+    escape_['$'] = "\\$";
   }
 
   void scope_up(std::ostream& out, std::string prefix=" ") {

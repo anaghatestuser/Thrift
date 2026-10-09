@@ -128,6 +128,29 @@ def lookup_addresses(options):
         translate_file_addresses(file, addresses.values(), options)
 
 
+def sanitize(text):
+    """
+    Escape terminal control characters in untrusted text.
+
+    Type names from the profile input and file/function names reported by
+    addr2line are not trusted: they may contain control characters (e.g. ESC
+    or BEL) that would otherwise be written to the terminal verbatim,
+    allowing terminal escape sequence injection.  Replace every C0 control
+    character, DEL, and C1 control character with a printable backslash
+    escape so the output is safe to display.  Returns None unchanged.
+    """
+    if text is None:
+        return text
+    out = []
+    for char in text:
+        code = ord(char)
+        if code < 0x20 or 0x7f <= code <= 0x9f:
+            out.append('\\x%02x' % (code,))
+        else:
+            out.append(char)
+    return ''.join(out)
+
+
 class Entry(object):
     """
     An entry in the thrift profile output.
@@ -149,16 +172,16 @@ class Entry(object):
         self.bt.append(addr)
 
     def write(self, f, options):
-        f.write(self.header)
+        f.write(sanitize(self.header))
         f.write('\n')
         n = 0
         for address in self.bt:
-            f.write('  #%-2d %s:%s\n' % (n, address.sourceFile,
-                                         address.sourceLine))
+            f.write('  #%-2d %s:%s\n' % (n, sanitize(address.sourceFile),
+                                         sanitize(address.sourceLine)))
             n += 1
             if options.printFunctions:
                 if address.function:
-                    f.write('      %s\n' % (address.function,))
+                    f.write('      %s\n' % (sanitize(address.function),))
                 else:
                     f.write('      ??\n')
 

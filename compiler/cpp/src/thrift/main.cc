@@ -440,7 +440,20 @@ void declare_valid_program_doctext() {
 char* clean_up_doctext(char* doctext) {
   // Convert to C++ string, and remove Windows's carriage returns.
   string docstring = doctext;
-  docstring.erase(remove(docstring.begin(), docstring.end(), '\r'), docstring.end());
+  // Normalize line endings without ever fusing characters that were separated
+  // by a CR: drop the CR of a CRLF pair, and convert any remaining (lone) CR
+  // to a LF.  Deleting lone CRs outright could fuse a '*' and a '/' into a
+  // "*/" sequence, smuggling a comment terminator into the doc text (the
+  // lexer guarantees the raw doc comment contains no "*/").
+  for (string::size_type i = 0; i < docstring.size(); ++i) {
+    if (docstring[i] == '\r') {
+      if (i + 1 < docstring.size() && docstring[i + 1] == '\n') {
+        docstring.erase(i, 1);
+      } else {
+        docstring[i] = '\n';
+      }
+    }
+  }
 
   // Separate into lines.
   vector<string> lines;
@@ -553,6 +566,17 @@ char* clean_up_doctext(char* doctext) {
   for (l_iter = lines.begin(); l_iter != lines.end(); ++l_iter) {
     docstring += *l_iter;
     docstring += '\n';
+  }
+
+  // The lexer only terminates its doctext scan on a literal "*/", so raw
+  // doctext never contains a comment terminator.  The cleanups above delete
+  // characters, though, and can thereby join a previously separated '*' and
+  // '/' (e.g. a carriage return removed from between them).  Break up any
+  // such sequence so generators can safely re-emit the doctext inside a
+  // comment.
+  for (pos = docstring.find("*/"); pos != string::npos;
+       pos = docstring.find("*/", pos + 2)) {
+    docstring.insert(pos + 1, 1, ' ');
   }
 
   // assert(docstring.length() <= strlen(doctext));  may happen, see THRIFT-1755
@@ -886,6 +910,23 @@ void validate_simple_identifier(const char* identifier) {
 }
 
 /**
+ * Check that a cpp_include path cannot break out of the generated #include
+ * directive.  The string literal lexer resolves escape sequences, so a
+ * cpp_include value may contain embedded quotes or newlines that would let
+ * an attacker inject arbitrary lines into the generated C++ output.
+ */
+void validate_cpp_include(const char* path) {
+  for (const char* p = path; *p != '\0'; ++p) {
+    const unsigned char c = static_cast<unsigned char>(*p);
+    if (c < 0x20 || c == 0x7f || c == '"') {
+      yyerror("cpp_include path contains invalid characters "
+              "(quotes and control characters are not allowed).");
+      exit(1);
+    }
+  }
+}
+
+/**
  * Check the type of the parsed const information against its declared type
  */
 void validate_const_type(t_const* c) {
@@ -965,7 +1006,7 @@ void parse(t_program* program, t_program* parent_program, std::set<std::string>&
       failure("Parser error during include pass.");
     }
   } catch (string &x) {
-    failure(x.c_str());
+    failure("%s", x.c_str());
   }
   fclose(yyin);
 
@@ -1003,7 +1044,7 @@ void parse(t_program* program, t_program* parent_program, std::set<std::string>&
       failure("Parser error during types pass.");
     }
   } catch (string &x) {
-    failure(x.c_str());
+    failure("%s", x.c_str());
   }
   fclose(yyin);
 
