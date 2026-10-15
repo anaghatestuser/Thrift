@@ -527,7 +527,7 @@ void t_js_generator::init_generator() {
     if (gen_esm_) {
       // Import the current module, so we can reference it as ttypes. This is
       // fine in ESM, because it allows circular imports.
-      f_types_ << "import * as ttypes from './" + program_->get_name() + "_types.mjs';" << '\n';
+      f_types_ << "import * as ttypes from './" + escape_string(program_->get_name()) + "_types.mjs';" << '\n';
     } else {
       f_types_ << js_const_type_ << "ttypes = module.exports = {};" << '\n';
     }
@@ -688,14 +688,14 @@ string t_js_generator::get_import_path(t_program* program) {
   const string import_file_name_with_extension = import_file_name + (gen_esm_ ? ".mjs" : ".js");
 
   if (program->get_recursive()) {
-    return "./" + import_file_name_with_extension;
+    return escape_string("./" + import_file_name_with_extension);
   }
 
   auto module_name_and_import_path_iterator = module_name_2_import_path.find(import_file_name);
   if (module_name_and_import_path_iterator != module_name_2_import_path.end()) {
-    return module_name_and_import_path_iterator->second;
+    return escape_string(module_name_and_import_path_iterator->second);
   }
-  return "./" + import_file_name_with_extension;
+  return escape_string("./" + import_file_name_with_extension);
 }
 
 string t_js_generator::get_import_path(t_service* service) {
@@ -704,9 +704,9 @@ string t_js_generator::get_import_path(t_service* service) {
 
   auto module_name_and_import_path_iterator = module_name_2_import_path.find(import_file_name);
   if (module_name_and_import_path_iterator != module_name_2_import_path.end()) {
-    return module_name_and_import_path_iterator->second;
+    return escape_string(module_name_and_import_path_iterator->second);
   }
-  return "./" + import_file_name_with_extension;
+  return escape_string("./" + import_file_name_with_extension);
 }
 
 /**
@@ -1378,7 +1378,7 @@ void t_js_generator::generate_service(t_service* tservice) {
     }
     f_service_ts_ << autogen_comment() << '\n' << ts_includes() << '\n' << render_ts_includes() << '\n';
     if (gen_node_) {
-      f_service_ts_ << "import ttypes = require('./" + program_->get_name() + "_types');" << '\n';
+      f_service_ts_ << "import ttypes = require('./" + escape_string(program_->get_name()) + "_types');" << '\n';
       // Generate type aliases
       // enum
       vector<t_enum*> const& enums = program_->get_enums();
@@ -1409,15 +1409,15 @@ void t_js_generator::generate_service(t_service* tservice) {
                   << js_namespace(program_) << (*s_iter)->get_name() << '\n';
       }
     } else {
-      f_service_ts_ << "import { " << program_->get_name() << " } from \"./" << program_->get_name() << "_types\";" << '\n' << '\n';
+      f_service_ts_ << "import { " << make_valid_nodeJs_identifier(program_->get_name()) << " } from \"./" << escape_string(program_->get_name()) << "_types\";" << '\n' << '\n';
     }
     if (!ts_module_.empty()) {
       if (gen_node_) {
         f_service_ts_ << "declare module " << ts_module_ << " {";
       } else {
-        f_service_ts_ << "declare module \"./" << program_->get_name() << "_types\" {" << '\n';
+        f_service_ts_ << "declare module \"./" << escape_string(program_->get_name()) << "_types\" {" << '\n';
         indent_up();
-        f_service_ts_ << ts_indent() << "module " << program_->get_name() << " {" << '\n';
+        f_service_ts_ << ts_indent() << "module " << make_valid_nodeJs_identifier(program_->get_name()) << " {" << '\n';
         indent_up();
       }
     }
@@ -1442,9 +1442,9 @@ void t_js_generator::generate_service(t_service* tservice) {
     }
 
     if (gen_esm_) {
-      f_service_ << "import * as ttypes from './" + program_->get_name() + "_types.mjs';" << '\n';
+      f_service_ << "import * as ttypes from './" + escape_string(program_->get_name()) + "_types.mjs';" << '\n';
     } else {
-      f_service_ << js_const_type_ << "ttypes = require('./" + program_->get_name() + "_types');" << '\n';
+      f_service_ << js_const_type_ << "ttypes = require('./" + escape_string(program_->get_name()) + "_types');" << '\n';
     }
   }
 
