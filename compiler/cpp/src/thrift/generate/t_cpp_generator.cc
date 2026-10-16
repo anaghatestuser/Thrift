@@ -525,6 +525,10 @@ void t_cpp_generator::init_generator() {
   // Include custom headers
   const vector<string>& cpp_includes = program_->get_cpp_includes();
   for (const auto & cpp_include : cpp_includes) {
+    if (cpp_include.find_first_of("\"\n\r") != string::npos) {
+      throw "compiler error: cpp_include contains an illegal character (quote or newline): "
+          + cpp_include;
+    }
     if (cpp_include[0] == '<') {
       f_types_ << "#include " << cpp_include << '\n';
     } else {
