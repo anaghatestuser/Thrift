@@ -86,7 +86,7 @@ int main(int argc, char **argv)
 	//Process command line params
 	if(argc > 1)
 	{
-		if(_tcscmp(argv[1], TEXT("-sp")) == 0)
+		if(argc > 2 && _tcscmp(argv[1], TEXT("-sp")) == 0)
 		{	//Socket Port specified
 			port = _tstoi(argv[2]);
 #ifdef _WIN32
@@ -95,7 +95,7 @@ int main(int argc, char **argv)
 			// Start the thrift server which is a blocking call.
 			thriftcommon::RunThriftServer<SampleServiceHandler, SampleServiceProcessor>(10, port);
 		}
-		else if(_tcscmp(argv[1], TEXT("-np")) == 0)
+		else if(argc > 2 && _tcscmp(argv[1], TEXT("-np")) == 0)
 		{	//Named Pipe specified
 #ifdef _WIN32
 			std::wstring wpipe(argv[2]);

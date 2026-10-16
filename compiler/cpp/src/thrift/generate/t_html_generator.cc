@@ -572,7 +572,10 @@ std::string t_html_generator::escape_html_tags(std::string const& str) {
       i = tolower(i);
     }
     if (allowed_markup.find(tag_key) != allowed_markup.end()) {
-      result << "<" << tag_content << ">";
+      // emit the whitelisted tag only, dropping any attributes: attribute
+      // values come straight from the doc-comment and could smuggle in
+      // event handlers or dangerous URI schemes (stored XSS)
+      result << "<" << tag_key << ">";
     } else {
       result << "&lt;" << tagstream.str() << "&gt;";
       pverbose("illegal markup <%s> in doc-comment\n", tag_key.c_str());

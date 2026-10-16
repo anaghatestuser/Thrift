@@ -68,7 +68,11 @@ public:
   t_kotlin_generator(t_program* program,
                      const std::map<std::string, std::string>& /*parsed_options*/,
                      const std::string& /*option_string*/)
-    : t_oop_generator(program) {}
+    : t_oop_generator(program) {
+    // Kotlin evaluates "$" and "${...}" as string templates inside string
+    // literals, so escape it in addition to the base escapes.
+    escape_['$'] = "\\$";
+  }
 
   /**
    * Init and close methods
@@ -292,7 +296,7 @@ void t_kotlin_generator::generate_consts(std::vector<t_const*> consts) {
       t_base_type::t_base tbase = ((t_base_type*)const_type)->get_base();
       switch (tbase) {
       case t_base_type::TYPE_STRING:
-        f_types_ << "\"" << value->get_string() << "\"";
+        f_types_ << "\"" << get_escaped_string(value) << "\"";
         break;
       case t_base_type::TYPE_BOOL:
         f_types_ << ((value->get_integer() > 0) ? "true" : "false");
@@ -600,7 +604,7 @@ void t_kotlin_generator::generate_metadata_for_field_annotations(std::ostream& o
     out << "mapOf(" << '\n';
     indent_up();
     for (auto& annotation : field->annotations_) {
-      indent(out) << "\"" + annotation.first + "\" to \"" + annotation.second.back() + "\"," << '\n';
+      indent(out) << "\"" + escape_string(annotation.first) + "\" to \"" + escape_string(annotation.second.back()) + "\"," << '\n';
     }
     indent_down();
     indent(out) << ")";

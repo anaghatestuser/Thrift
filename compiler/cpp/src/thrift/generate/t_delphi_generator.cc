@@ -4576,7 +4576,12 @@ std::string t_delphi_generator::render_deprecation_attribute(std::map<std::strin
 
     // empty annotation values end up with "1" somewhere, ignore these as well
     if ((iter->second.back().length() > 0) && (iter->second.back() != "1")) {
-      result += " " + make_pascal_string_literal(iter->second.back());
+      // Callers may wrap the result into a { } comment, so strip any brace
+      // characters that would terminate such a comment prematurely.
+      std::string value = iter->second.back();
+      value.erase(std::remove(value.begin(), value.end(), '{'), value.end());
+      value.erase(std::remove(value.begin(), value.end(), '}'), value.end());
+      result += " " + make_pascal_string_literal(value);
     }
 
     result += postfix;
